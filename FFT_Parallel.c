@@ -4,52 +4,46 @@ Moscow State University in Tashkent
 FFT PARALLEL IMPLEMETATION
 */
 /* 
-	This program computes the FFT in parallel using mpi
-	Runs the program X amount of times and computes the time
-	for each iteration. Then averages the time taken
-	Each process with get a subtable from the table. Then calculate 
-	even and odd for each coeffiencet X then P0 will gather these values
-	and print them to the file
-	
-	COMPILE: mpicc -o paraverexe ParallelVersion.c -lm   *NOTE: -lm * allows use of library that uses cos and sin
-	RUN: qsub mpiJobParallel
+	Эта программа вычисляет БПФ параллельно с использованием mpi.
+	Запускает программу X раз и вычисляет время для каждой итерации. Затем усредняет затраченное время
+	Каждый процесс получает подтаблицу из таблицы. Затем вычислите четное и нечетное для каждого коэффициента X, тогда P0 соберет эти значения и распечатает их в файл
 */
 #include <stdio.h>
-#include <mpi.h> //To use MPI
-#include <complex.h> //to use complex numbers
-#include <math.h>	//for cos() and sin()
-#include "timer.h" //to use timer
+#include <mpi.h> //Чтобы использовать MPI
+#include <complex.h> //Чтобы использовать комплексные числа
+#include <math.h>	//для cos() и sin()
+#include "timer.h" //для использованию таймера
 
 #define PI 3.14159265
-#define bigN 16384 //Problem Size
-#define howmanytimesavg 3 //How many times do I wanna run for the AVG?
+#define bigN 16384 //Размер задачи
+#define howmanytimesavg 3 //Сколько раз я хочу бегать в AVG?
 
 int main()
 {
 	int my_rank,comm_sz;
-	MPI_Init(NULL,NULL); //start MPI
-	MPI_Comm_size(MPI_COMM_WORLD,&comm_sz);   ///how many processes are we using?
-	MPI_Comm_rank(MPI_COMM_WORLD,&my_rank);   //which process is this?
+	MPI_Init(NULL,NULL); //запустить MPI
+	MPI_Comm_size(MPI_COMM_WORLD,&comm_sz);   ///сколько процессов мы используем?
+	MPI_Comm_rank(MPI_COMM_WORLD,&my_rank);  
 	double start,finish;
 	double avgtime = 0;
 	FILE *outfile;
 	int h;
-	if(my_rank == 0) //if process 0 open outfile
+	if(my_rank == 0) //если процесс 0 открыть файл
 	{
-		outfile = fopen("ParallelVersionOutput.txt", "w"); //open from current directory
+		outfile = fopen("ParallelVersionOutput.txt", "w"); //открыть из текущего каталога
 	}
-	for(h = 0; h < howmanytimesavg; h++) //loop to run multiple times for AVG time.
+	for(h = 0; h < howmanytimesavg; h++) //цикл для выполнения несколько раз за время AVG.
 	{
-		if(my_rank == 0) //If it's process 0 starts timer
+		if(my_rank == 0) //Если 0, запускается таймер
 		{	
 			start = MPI_Wtime();
 		}
-		int i,k,n,j; //Basic loop variables
+		int i,k,n,j; //Основные переменные цикла
 
-		double complex evenpart[(bigN / comm_sz / 2)]; //array to save the data for EVENHALF
-		double complex oddpart[(bigN / comm_sz / 2)]; //array to save the data for ODDHALF
-		double complex evenpartmaster[ (bigN / comm_sz / 2) * comm_sz]; //array to save the data for EVENHALF
-		double complex oddpartmaster[ (bigN / comm_sz / 2) * comm_sz]; //array to save the data for ODDHALF
+		double complex evenpart[(bigN / comm_sz / 2)]; //массив для сохранения данных для EVENHALF
+		double complex oddpart[(bigN / comm_sz / 2)]; //массив для сохранения данных для ODDHALF
+		double complex evenpartmaster[ (bigN / comm_sz / 2) * comm_sz]; //массив для сохранения данных для EVENHALF
+		double complex oddpartmaster[ (bigN / comm_sz / 2) * comm_sz]; //массив для сохранения данных для ODDHALF
 		double storeKsumreal[bigN]; //store the K real variable so we can abuse symmerty
 		double storeKsumimag[bigN]; //store the K imaginary variable so we can abuse symmerty
 		
