@@ -2,160 +2,112 @@
 Raupova Mokhinur
 */
 
-#include <stdio.h>
-#include <mpi.h> 
-#include <complex.h> 
-#include <math.h>
-#include "timer.h" 
+#include <iostream>
+#include <vector>
+#include <complex>
+#include <valarray>
+#include <omp.h>
 
-#define PI 3.14159265
-#define bigN 16384
-#define howmanytimesavg 3
+using namespace std;
+
+#define THREADS 4
+const double PI = 3.141592653589793238460;
+ 
+
+typedef std::complex<double> Complex;
+typedef vector<Complex> CArray;
+
+void fft(CArray &x)
+{
+  // DFT
+  unsigned int N = x.size(), k = N, n;
+  double thetaT = 3.14159265358979323846264338328L / N;
+  Complex phiT = Complex(cos(thetaT), -sin(thetaT)), T;
+  while (k > 1)
+  {
+    n = k;
+    k >>= 1;
+    phiT = phiT * phiT;
+    T = 1.0L;
+        #pragma omp parallel for num_threads(THREADS) schedule(static)
+        {
+            for (unsigned int l = 0; l < k; l++)
+            {
+                for (unsigned int a = l; a < N; a += n)
+                {
+                    unsigned int b = a + k;
+                    Complex t = x[a] - x[b];
+                    x[a] += x[b];
+                    x[b] = t * T;
+                }
+                T *= phiT;
+            }
+        }
+  }
+  // Decimate
+  unsigned int m = (unsigned int)log2(N);
+
+    #pragma omp parallel for num_threads(THREADS)
+    for (unsigned int a = 0; a < N; a++)
+    {
+        unsigned int b = a;
+        // Reverse bits
+        b = (((b & 0xaaaaaaaa) >> 1) | ((b & 0x55555555) << 1));
+        b = (((b & 0xcccccccc) >> 2) | ((b & 0x33333333) << 2));
+        b = (((b & 0xf0f0f0f0) >> 4) | ((b & 0x0f0f0f0f) << 4));
+        b = (((b & 0xff00ff00) >> 8) | ((b & 0x00ff00ff) << 8));
+        b = ((b >> 16) | (b << 16)) >> (32 - m);
+        if (b > a)
+        {
+            Complex t = x[a];
+            x[a] = x[b];
+            x[b] = t;
+        }
+    }
+}
+
+
+CArray read_data(int n)
+{
+    double x,y;
+    CArray data;
+    data.reserve(n);
+    for(int i=0;i<n;i++)
+    {
+        cin>>x>>y;
+        Complex temp2 = {x,y};
+        data.push_back(temp2);
+    }
+    return data;
+}
+
 
 int main()
 {
-	int my_rank,comm_sz;
-	MPI_Init(NULL,NULL); //запустить MPI
-	MPI_Comm_size(MPI_COMM_WORLD,&comm_sz);   
-	MPI_Comm_rank(MPI_COMM_WORLD,&my_rank);  
-	double start,finish;
-	double avgtime = 0;
-	FILE *outfile;
-	int h;
-	if(my_rank == 0) 
-	{
-		outfile = fopen("ParallelVersionOutput.txt", "w"); 
-	}
-	for(h = 0; h < howmanytimesavg; h++) 
-	{
-		if(my_rank == 0)
-		{	
-			start = MPI_Wtime();
-		}
-		int i,k,n,j; 
+    int n = 8;
+    cin>>n;
+    // const Complex test[] = {{1.0,1.0},{0.0,1.0},{2.0,1.0},{1.1,4.1},{3.1,5.0},{6.0,6.0},{12.0,3.0},{1.0,1.0}};
+    // const Complex test[] = { 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0 };
+    // CArray data(test, n);
 
-		double complex evenpart[(bigN / comm_sz / 2)]; 
-		double complex oddpart[(bigN / comm_sz / 2)]; 
-		double complex evenpartmaster[ (bigN / comm_sz / 2) * comm_sz]; 
-		double complex oddpartmaster[ (bigN / comm_sz / 2) * comm_sz]; 
-		double storeKsumreal[bigN]; 
-		double storeKsumimag[bigN]; 
-		
-		double subtable[(bigN / comm_sz)][3]; 
-		
-		double table[bigN][3] = 
-							{
-							 0,3.6,2.6,
-							 1,2.9,6.3,
-							 2,5.6,4.0,
-							 3,4.8,9.1,
-							 4,3.3,0.4,
-							 5,5.9,4.8,
-							 6,5.0,2.6,
-							 7,4.3,4.1,
-							 };
-			if(bigN > 8)  
-			{
-				for(i = 8; i < bigN; i++)
-				{
-					table[i][0] = i;
-					for(j = 1; j < 3;j++)
-					{
-						table[i][j] = 0.0; 
-					}
-				}
-			}
-		int sendandrecvct = (bigN / comm_sz) * 3; 
-		MPI_Scatter(table,sendandrecvct,MPI_DOUBLE,subtable,sendandrecvct,MPI_DOUBLE,0,MPI_COMM_WORLD); 
-		for (k = 0; k < bigN / 2; k++) 
-		{
-					
-			double sumrealeven = 0.0; 
-			double sumimageven = 0.0;
-			double sumrealodd = 0.0; 
-			double sumimagodd = 0.0; 
-			
-			for(i = 0; i < (bigN/comm_sz)/2; i++) 
-			{
-				double factoreven , factorodd = 0.0;
-				int shiftevenonnonzeroP = my_rank * subtable[2*i][0];
-				int shiftoddonnonzeroP = my_rank * subtable[2*i + 1][0]; 
-								
-				double realeven = subtable[2*i][1]; 
-				double complex imaginaryeven = subtable[2*i][2];
-				double complex componeeven = (realeven + imaginaryeven * I); 
-				if(my_rank == 0) 
-				{
-					factoreven = ((2*PI)*((2*i)*k))/bigN; 				
-				}
-				else
-				{
-					factoreven = ((2*PI)*((shiftevenonnonzeroP)*k))/bigN; 
-				}
-				double complex comptwoeven = (cos(factoreven) - (sin(factoreven)*I)); 
-				
-				evenpart[i] = (componeeven * comptwoeven); 
-				
-				double realodd = subtable[2*i + 1][1]; 
-				double complex imaginaryodd = subtable[2*i + 1][2]; 
-				double complex componeodd = (realodd + imaginaryodd * I); 
-				if (my_rank == 0)
-				{
-					factorodd = ((2*PI)*((2*i+1)*k))/bigN;
-				}
-				else
-				{
-					factorodd = ((2*PI)*((shiftoddonnonzeroP)*k))/bigN;
-				}
-							
-				double complex comptwoodd = (cos(factorodd) - (sin(factorodd)*I));
-
-				oddpart[i] = (componeodd * comptwoodd);
-				
-			}
-			MPI_Gather(evenpart,(bigN / comm_sz / 2),MPI_DOUBLE_COMPLEX,evenpartmaster,(bigN / comm_sz / 2), MPI_DOUBLE_COMPLEX,0,MPI_COMM_WORLD);
-			MPI_Gather(oddpart,(bigN / comm_sz / 2),MPI_DOUBLE_COMPLEX,oddpartmaster,(bigN / comm_sz / 2), MPI_DOUBLE_COMPLEX,0,MPI_COMM_WORLD);
-
-			if(my_rank == 0)
-			{
-				for(i = 0; i < (bigN / comm_sz / 2) * comm_sz; i++)
-				{
-					sumrealeven += creal(evenpartmaster[i]);
-					sumimageven += cimag(evenpartmaster[i]); 
-					sumrealodd += creal(oddpartmaster[i]); 
-					sumimagodd += cimag(oddpartmaster[i]); 
-				}
-				storeKsumreal[k] = sumrealeven + sumrealodd; 
-				storeKsumimag[k]  = sumimageven + sumimagodd;
-				storeKsumreal[k + bigN/2] = sumrealeven - sumrealodd; 
-				storeKsumimag[k + bigN/2] = sumimageven - sumimagodd; 
-				if(k <= 10) 
-				{
-					if(k == 0)
-					{
-						fprintf(outfile," \n\n TOTAL PROCESSED SAMPLES : %d\n",bigN);
-					}
-					fprintf(outfile,"================================\n");
-					fprintf(outfile,"XR[%d]: %.4f XI[%d]: %.4f \n",k,storeKsumreal[k],k,storeKsumimag[k]);
-					fprintf(outfile,"================================\n");
-				}
-			}
-		}
-		if(my_rank == 0)
-		{
-			GET_TIME(finish);
-			double timeElapsed = finish-start; 
-			avgtime = avgtime + timeElapsed;
-			fprintf(outfile,"Time Elaspsed on Iteration %d: %f Seconds\n", (h+1),timeElapsed);
-		}
-	}
-	if(my_rank == 0)
-	{
-		avgtime = avgtime / howmanytimesavg; 
-		fprintf(outfile,"\nAverage Time Elaspsed: %f Seconds", avgtime);
-		fclose(outfile); 
-	}
-	MPI_Barrier(MPI_COMM_WORLD); 
-	MPI_Finalize(); 
-	return 0;
+    CArray data = read_data(n);
+ 
+    // forward fft
+    fft(data);
+ 
+    std::cout << "fft" << std::endl;
+    for (int i = 0; i < n; ++i)
+    {
+        std::cout << data[i] << std::endl;
+    }
+ 
+    // // inverse fft
+    // ifft(data);
+ 
+    // std::cout << std::endl << "ifft" << std::endl;
+    // for (int i = 0; i < n; ++i)
+    // {
+    //     std::cout << data[i] << std::endl;
+    // }
+    return 0;
 }
